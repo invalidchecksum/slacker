@@ -1,0 +1,9 @@
+[Unit]
+Description=Notify on SFTP receive
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python /home/ubuntu/slacker.py
+
+[Install]
+WantedBy=multi-user.target
