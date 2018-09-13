@@ -10,7 +10,7 @@ class SlackManager:
 	def nothing(self,):
 		self.logger("Message Text placeholder")
 	def __init__(self, st, chan,inter=30.0):
-		self.filesSinceLastMsg = -1
+		self.files_added = {}
 		self.sc = SlackClient(st)
 		self.channel = chan
 		self.lastSendStatus=''
@@ -19,8 +19,8 @@ class SlackManager:
 		self.logfile = '/home/ubuntu/slacker.log'
 		
 		self.wm = pyinotify.WatchManager()
-		self.notifier = pyinotify.Notifier(self.wm)
-		self.wm.add_watch('/ftp', pyinotify.IN_CREATE)
+		self.notifier = pyinotify.Notifier(self.wm, default_proc_fun=self.on_loop)
+		self.wm.add_watch('/ftp/', pyinotify.IN_CREATE, rec=True)
 		
 		self.startTimer()
 		self.createNotifier()
@@ -36,8 +36,9 @@ class SlackManager:
 	def createNotifier(self,):
 		try:
 			#self.notifier.loop(daemonize=True,callback=self.on_loop,pid_file='/home/ubuntu/pyinotify.pid',stdout='/home/ubuntu/pyinotify.log')
-			t = threading.Thread( target=self.notifier.loop, kwargs={'daemonize':False,'callback':self.on_loop} ) 
-			t.start()
+			#t = threading.Thread( target=self.notifier.loop, kwargs={'daemonize':False,'callback':self.on_loop} ) 
+			self.notifier.loop()
+			#t.start()
 		except pyinotify.NotifierError, err:
 			print err
 		except Exception as err:
@@ -46,9 +47,6 @@ class SlackManager:
 			print "something went wrong: "+err
 		except:
 			print "Uncaught exception: ",sys.exc_info()[0]
-	def add(self,amount=1):
-		self.filesSinceLastMsg+=amount
-		return
 	def startTimer(self,):
 		try:
 			self.tracker = threading.Timer(self.interval,self.timerExpire)
@@ -66,33 +64,28 @@ class SlackManager:
 		tracker.cancel()
 		startTimer()
 		return
-	def sendMsg(self,):
-		self.logger("Called sendMsg() with files: "+str(self.filesSinceLastMsg))
-		temp = self.filesSinceLastMsg
-		self.filesSinceLastMsg = 0
-		if (temp == 1):
-			#self.nothing()
-			self.lastSendStatus = sc.api_call("chat.postMessage",channel=self.channel,text="A new crash dump was added to the 6900PhoneLogs.")
-		elif (temp > 1):
-			#self.nothing()
-			self.lastSendStatus = sc.api_call("chat.postMessage",channel=self.channel,text=str(self.filesSinceLastMsg)+" new crash dumps were added to the 6900PhoneLogs.")
-		else:
-			self.logger("No Calls Made")
+	def sendMsg(self):
+		slackMsg = "New crash dumps in: "
+		if (len(self.files_added) < 1):
 			return 1
+		for p in self.files_added:
+			slackMsg += p+", "
+		self.lastSendStatus = sc.api_call("chat.postMessage",channel=self.channel,text=slackMsg.rstrip(','))
 		self.logger( "sent message,status: "+str(json.dumps(self.lastSendStatus)) )
-		self.filesSinceLastMsg=0
+		self.files_added.clear()
 		return 0
-	def on_loop(self,notifier):
-		self.add()
-		self.logger("Added a file, filesSinceLastSend: " + str(self.filesSinceLastMsg))
-		#print "Called the on_loop() function. Files: "+str(self.filesSinceLastMsg)
+	def on_loop(self,evt):
+		p = os.path.dirname(evt.pathname)
+		print p
+		#self.files_added.append(evt.pathname)
+		self.files_added[p] = True
 
 f=open('slacker.log','w')
 f.write("Starting...\n")
 f.close()
 slack_token=''
 try:
-	lack_token=os.environ["SLACK_OAUTH_TOKEN"]
+	slack_token=os.environ["SLACK_OAUTH_TOKEN"]
 except:
 	if not slack_token:
 		with open('/home/ubuntu/.slack_token','r') as f:
